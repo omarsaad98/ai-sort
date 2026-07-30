@@ -3,6 +3,7 @@ import { Command, InvalidArgumentError } from "commander";
 import { readdir, stat } from "node:fs/promises";
 import { resolve } from "node:path";
 import { rankByPrompt } from "./sort.js";
+import { loadDotEnv } from "./env.js";
 import { createComparator, listOllamaModels, type ComparatorConfig } from "./providers/index.js";
 import {
   loadFromFileList,
@@ -138,6 +139,10 @@ async function buildComparatorConfig(options: CliOptions): Promise<ComparatorCon
 }
 
 async function main(): Promise<void> {
+  // Pull OPENAI_API_KEY (and any other keys) from a local .env, if present.
+  // Real environment variables take precedence over the file.
+  loadDotEnv();
+
   const program = new Command();
 
   program

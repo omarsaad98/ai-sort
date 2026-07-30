@@ -78,9 +78,15 @@ Existing output files and non-empty output directories are refused unless you pa
 ai-sort --input items.txt --prompt "..." --model qwen3.5:9b
 ai-sort --input items.txt --prompt "..." --base-url http://otherhost:11434
 
-# OpenAI — reads $OPENAI_API_KEY
+# OpenAI — reads $OPENAI_API_KEY (or a .env file in the working directory)
 ai-sort --input items.txt --prompt "..." --provider openai --model gpt-4o-mini
 ```
+
+For OpenAI, the key is read from the `OPENAI_API_KEY` environment variable. A
+`.env` file in the current directory is loaded automatically (real environment
+variables take precedence), or pass `--api-key` explicitly. Transient rate
+limits and 5xx responses are retried with exponential backoff, honoring any
+`Retry-After` header. Point `--base-url` at any OpenAI-compatible endpoint.
 
 Reasoning is disabled by default on thinking-capable Ollama models, since it roughly triples latency for a binary judgement. Pass `--think` to enable it.
 
