@@ -11,7 +11,7 @@ The goal is a **dial-heavy** tool: sorting with a noisy judge is a cost/accuracy
 | `refinementBudget` | exposed; **expanding window spends any budget** | ✅ done — window widens outward until budget is spent |
 | `refinementWindow` | exposed, default unbounded | ✅ done — caps targeting breadth `w` |
 | `priorWeight` | exposed, default `0.5` | ✅ done — controls score shrinkage and scale |
-| `btIterations` | exposed, default `200` | ✅ done — expose done; delta-tolerance convergence still possible |
+| `btIterations` | exposed as a cap; fit stops on `btTolerance` (default `1e-8`) | ✅ done — exposed + delta-tolerance early stop |
 | `confidenceSource` | none | `none` \| `logprob` \| `verbal` |
 | `samplesPerPair` | effectively 1 (memoized) | `k` samples for a real per-pair win rate `p_ij` |
 | `softWeights` | off (binary edges) | feed confidence as fractional win weight; **keep default off until calibrated** |

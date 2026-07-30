@@ -98,7 +98,8 @@ Reasoning is disabled by default on thinking-capable Ollama models, since it rou
 | `-r, --refine <n>` | Extra comparisons after the first pass (default: item count; `0` disables) |
 | `--refine-window <n>` | Cap how many ranks apart refined pairs may be (default: unbounded) |
 | `--prior-weight <w>` | Bradley-Terry prior strength; higher shrinks score gaps (default: 0.5) |
-| `--bt-iterations <n>` | Bradley-Terry fit iterations; more converges tighter, no extra LLM calls (default: 200) |
+| `--bt-iterations <n>` | Cap on Bradley-Terry fit iterations; stops early on convergence, no extra LLM calls (default: 200) |
+| `--bt-tolerance <t>` | Bradley-Terry convergence tolerance; larger stops sooner, `0` runs the full cap (default: 1e-8) |
 | `--scores` | Prefix each line with its latent score |
 | `--json` | Emit ranks, scores, and source paths as JSON |
 | `--no-trim` | Keep surrounding whitespace on each item |

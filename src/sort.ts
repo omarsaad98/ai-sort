@@ -158,11 +158,12 @@ async function refine(
   maxWindow: number,
   iterations: number,
   priorWeight: number,
+  tolerance: number,
 ): Promise<void> {
   let spent = 0;
   let window = 1;
   while (spent < budget) {
-    const scores = fitBradleyTerry(engine.pairWins, n, iterations, priorWeight);
+    const scores = fitBradleyTerry(engine.pairWins, n, iterations, priorWeight, tolerance);
     const order = Array.from({ length: n }, (_, id) => id).sort((a, b) => scores[b] - scores[a]);
 
     // Collect a batch of uncompared pairs within the current window, nearest
@@ -252,6 +253,7 @@ export async function rankByPrompt(items: readonly string[], options: SortOption
   // diverge the fit or spin forever.
   const btIterations = Math.max(1, Math.floor(options.btIterations ?? 200));
   const priorWeight = Math.max(0, options.priorWeight ?? 0.5);
+  const btTolerance = Math.max(0, options.btTolerance ?? 1e-8);
 
   let groupScores: number[];
   if (groupCount <= 1) {
@@ -273,9 +275,12 @@ export async function rankByPrompt(items: readonly string[], options: SortOption
         maxWindow,
         btIterations,
         priorWeight,
+        btTolerance,
       );
     }
-    groupScores = toLogScale(fitBradleyTerry(engine.pairWins, groupCount, btIterations, priorWeight));
+    groupScores = toLogScale(
+      fitBradleyTerry(engine.pairWins, groupCount, btIterations, priorWeight, btTolerance),
+    );
   }
 
   const groupOrder = Array.from({ length: groupCount }, (_, g) => g).sort(

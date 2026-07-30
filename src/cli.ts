@@ -33,6 +33,7 @@ interface CliOptions {
   refineWindow?: number;
   priorWeight?: number;
   btIterations?: number;
+  btTolerance?: number;
   trim: boolean;
   scores?: boolean;
   json?: boolean;
@@ -197,8 +198,13 @@ async function main(): Promise<void> {
     )
     .option(
       "--bt-iterations <n>",
-      "Bradley-Terry fit iterations; more converges tighter, no extra LLM calls (default: 200)",
+      "cap on Bradley-Terry fit iterations (stops early on convergence; default: 200)",
       parsePositiveInt,
+    )
+    .option(
+      "--bt-tolerance <t>",
+      "Bradley-Terry convergence tolerance; larger stops sooner, 0 runs the full cap (default: 1e-8)",
+      parseNonNegativeFloat,
     )
     .option("--no-trim", "keep leading/trailing whitespace on each item")
     .option("--scores", "print Bradley-Terry scores alongside stdout output")
@@ -235,6 +241,7 @@ async function main(): Promise<void> {
     refinementWindow: options.refineWindow,
     priorWeight: options.priorWeight,
     btIterations: options.btIterations,
+    btTolerance: options.btTolerance,
     onProgress: options.quiet
       ? undefined
       : ({ comparisons, phase }) => {

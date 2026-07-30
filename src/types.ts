@@ -50,12 +50,19 @@ export interface SortOptions {
    */
   priorWeight?: number;
   /**
-   * Number of minorize-maximize iterations used to fit the Bradley-Terry
-   * scores. More iterations converge tighter at more CPU cost (no extra LLM
-   * calls); the default is comfortably past convergence for typical sizes.
-   * Must be >= 1. Default: 200.
+   * Maximum minorize-maximize iterations for the Bradley-Terry fit. The fit
+   * stops early once it converges (see `btTolerance`), so this is just a cap on
+   * pathological cases — raising it costs nothing on inputs that converge fast.
+   * No extra LLM calls either way. Must be >= 1. Default: 200.
    */
   btIterations?: number;
+  /**
+   * Convergence tolerance for the Bradley-Terry fit: iteration stops once no
+   * item's latent (log-scale) score moves by more than this in a step. Larger
+   * stops sooner (cheaper, looser scores); `0` disables early stopping and runs
+   * the full `btIterations` cap. Must be >= 0. Default: 1e-8.
+   */
+  btTolerance?: number;
   /** Called after each comparison completes, useful for progress bars. */
   onProgress?: (progress: SortProgress) => void;
 }

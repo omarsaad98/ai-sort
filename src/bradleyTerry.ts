@@ -42,8 +42,15 @@ function winsBetween(pw: PairWins, i: number, j: number): number {
  */
 export const DEFAULT_PRIOR_WEIGHT = 0.5;
 
-/** Default number of MM iterations run to convergence. */
+/** Default cap on MM iterations; the fit normally converges well before this. */
 export const DEFAULT_BT_ITERATIONS = 200;
+
+/**
+ * Default convergence tolerance: stop once no item's latent (log-scale) score
+ * moves more than this between iterations. Tight enough that the early stop is
+ * indistinguishable from running the full iteration cap for typical inputs.
+ */
+export const DEFAULT_BT_TOLERANCE = 1e-8;
 
 /**
  * Fit Bradley-Terry scores for `n` items indexed 0..n-1, on the multiplicative
@@ -52,14 +59,20 @@ export const DEFAULT_BT_ITERATIONS = 200;
  *
  * `priorWeight` sets the shrinkage of the regularizing prior (higher pulls
  * scores toward the neutral anchor, shrinking the spread; lower lets a clean
- * separation stretch the scale further). `iterations` is the MM iteration
- * count.
+ * separation stretch the scale further).
+ *
+ * The MM iteration runs until it converges — no item's latent (log-scale) score
+ * shifts by more than `tolerance` — or until `iterations` iterations have run,
+ * whichever comes first. Easy inputs converge in a handful of iterations; the
+ * cap only bounds pathological cases. Set `tolerance` to `0` to always run the
+ * full cap.
  */
 export function fitBradleyTerry(
   pw: PairWins,
   n: number,
   iterations = DEFAULT_BT_ITERATIONS,
   priorWeight = DEFAULT_PRIOR_WEIGHT,
+  tolerance = DEFAULT_BT_TOLERANCE,
 ): number[] {
   const scores = new Array(n).fill(1);
   if (n <= 1) return scores;
@@ -103,7 +116,19 @@ export function fitBradleyTerry(
     const geoMean = Math.exp(logSum / n);
     for (let i = 0; i < n; i++) next[i] = next[i] / geoMean;
 
+    // Largest per-item move on the latent (log) scale — the quantity the final
+    // ordering and scores are read from. Measured after normalization so a
+    // uniform rescale doesn't register as progress.
+    let maxDelta = 0;
+    for (let i = 0; i < n; i++) {
+      const delta = Math.abs(Math.log(next[i] / scores[i]));
+      if (delta > maxDelta) maxDelta = delta;
+    }
+
     scores.splice(0, n, ...next);
+
+    // Converged: further iterations would not move any score meaningfully.
+    if (maxDelta <= tolerance) break;
   }
 
   return scores;
