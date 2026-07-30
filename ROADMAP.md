@@ -10,8 +10,8 @@ The goal is a **dial-heavy** tool: sorting with a noisy judge is a cost/accuracy
 | `concurrency` | exposed, default 4 | keep; add adaptive backoff on provider 429/503 |
 | `refinementBudget` | exposed; **expanding window spends any budget** | ✅ done — window widens outward until budget is spent |
 | `refinementWindow` | exposed, default unbounded | ✅ done — caps targeting breadth `w` |
-| `priorWeight` | hardcoded `0.5` (`bradleyTerry.ts`) | expose; controls score shrinkage and scale |
-| `btIterations` | hardcoded `200` | expose, or converge on delta tolerance instead |
+| `priorWeight` | exposed, default `0.5` | ✅ done — controls score shrinkage and scale |
+| `btIterations` | exposed, default `200` | ✅ done — expose done; delta-tolerance convergence still possible |
 | `confidenceSource` | none | `none` \| `logprob` \| `verbal` |
 | `samplesPerPair` | effectively 1 (memoized) | `k` samples for a real per-pair win rate `p_ij` |
 | `softWeights` | off (binary edges) | feed confidence as fractional win weight; **keep default off until calibrated** |

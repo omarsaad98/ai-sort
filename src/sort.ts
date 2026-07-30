@@ -156,11 +156,13 @@ async function refine(
   budget: number,
   batchSize: number,
   maxWindow: number,
+  iterations: number,
+  priorWeight: number,
 ): Promise<void> {
   let spent = 0;
   let window = 1;
   while (spent < budget) {
-    const scores = fitBradleyTerry(engine.pairWins, n);
+    const scores = fitBradleyTerry(engine.pairWins, n, iterations, priorWeight);
     const order = Array.from({ length: n }, (_, id) => id).sort((a, b) => scores[b] - scores[a]);
 
     // Collect a batch of uncompared pairs within the current window, nearest
@@ -245,6 +247,12 @@ export async function rankByPrompt(items: readonly string[], options: SortOption
     total: groupCount,
   };
 
+  // Bradley-Terry fit dials. Both only affect scoring/refinement targeting, not
+  // the LLM comparison budget. Clamp to safe ranges so a bad option can't
+  // diverge the fit or spin forever.
+  const btIterations = Math.max(1, Math.floor(options.btIterations ?? 200));
+  const priorWeight = Math.max(0, options.priorWeight ?? 0.5);
+
   let groupScores: number[];
   if (groupCount <= 1) {
     groupScores = new Array(groupCount).fill(0);
@@ -257,9 +265,17 @@ export async function rankByPrompt(items: readonly string[], options: SortOption
       // Unbounded window by default: widen until the budget is spent or every
       // pair (distance up to n-1) has been compared.
       const maxWindow = Math.max(1, options.refinementWindow ?? groupCount - 1);
-      await refine(engine, groupCount, budget, Math.max(1, options.concurrency ?? 4), maxWindow);
+      await refine(
+        engine,
+        groupCount,
+        budget,
+        Math.max(1, options.concurrency ?? 4),
+        maxWindow,
+        btIterations,
+        priorWeight,
+      );
     }
-    groupScores = toLogScale(fitBradleyTerry(engine.pairWins, groupCount));
+    groupScores = toLogScale(fitBradleyTerry(engine.pairWins, groupCount, btIterations, priorWeight));
   }
 
   const groupOrder = Array.from({ length: groupCount }, (_, g) => g).sort(

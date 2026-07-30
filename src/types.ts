@@ -40,6 +40,22 @@ export interface SortOptions {
    * the extra comparisons focused on near-ties rather than distant pairs.
    */
   refinementWindow?: number;
+  /**
+   * Strength of the Bradley-Terry regularizing prior — the fictitious wins and
+   * losses each item gets against a neutral average opponent. Controls score
+   * shrinkage and scale: higher pulls scores toward 0 (tighter, more
+   * conservative gaps), lower lets a clean separation stretch the latent scale
+   * further. Only affects the reported scores and refinement targeting, never
+   * the comparison budget. Must be >= 0. Default: 0.5.
+   */
+  priorWeight?: number;
+  /**
+   * Number of minorize-maximize iterations used to fit the Bradley-Terry
+   * scores. More iterations converge tighter at more CPU cost (no extra LLM
+   * calls); the default is comfortably past convergence for typical sizes.
+   * Must be >= 1. Default: 200.
+   */
+  btIterations?: number;
   /** Called after each comparison completes, useful for progress bars. */
   onProgress?: (progress: SortProgress) => void;
 }

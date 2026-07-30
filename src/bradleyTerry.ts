@@ -35,19 +35,32 @@ function winsBetween(pw: PairWins, i: number, j: number): number {
 }
 
 /**
- * Strength of the regularizing prior: each item gets this many fictitious wins
- * and losses against a virtual average opponent. Without it, a cleanly
- * separated ordering drives the top and bottom scores toward +/-infinity, so
- * the magnitudes become meaningless (and eventually overflow).
+ * Default strength of the regularizing prior: each item gets this many
+ * fictitious wins and losses against a virtual average opponent. Without it, a
+ * cleanly separated ordering drives the top and bottom scores toward
+ * +/-infinity, so the magnitudes become meaningless (and eventually overflow).
  */
-const PRIOR_WEIGHT = 0.5;
+export const DEFAULT_PRIOR_WEIGHT = 0.5;
+
+/** Default number of MM iterations run to convergence. */
+export const DEFAULT_BT_ITERATIONS = 200;
 
 /**
  * Fit Bradley-Terry scores for `n` items indexed 0..n-1, on the multiplicative
  * (gamma) scale with geometric mean 1. Items with no recorded comparisons keep
  * the neutral score of 1.
+ *
+ * `priorWeight` sets the shrinkage of the regularizing prior (higher pulls
+ * scores toward the neutral anchor, shrinking the spread; lower lets a clean
+ * separation stretch the scale further). `iterations` is the MM iteration
+ * count.
  */
-export function fitBradleyTerry(pw: PairWins, n: number, iterations = 200): number[] {
+export function fitBradleyTerry(
+  pw: PairWins,
+  n: number,
+  iterations = DEFAULT_BT_ITERATIONS,
+  priorWeight = DEFAULT_PRIOR_WEIGHT,
+): number[] {
   const scores = new Array(n).fill(1);
   if (n <= 1) return scores;
 
@@ -70,10 +83,10 @@ export function fitBradleyTerry(pw: PairWins, n: number, iterations = 200): numb
         next[i] = scores[i];
         continue;
       }
-      // Prior: PRIOR_WEIGHT wins and PRIOR_WEIGHT losses against a virtual
+      // Prior: priorWeight wins and priorWeight losses against a virtual
       // opponent of strength 1 (the geometric-mean anchor).
-      let numerator = PRIOR_WEIGHT;
-      let denominator = (2 * PRIOR_WEIGHT) / (scores[i] + 1);
+      let numerator = priorWeight;
+      let denominator = (2 * priorWeight) / (scores[i] + 1);
       for (const j of opps) {
         const wij = winsBetween(pw, i, j);
         const wji = winsBetween(pw, j, i);

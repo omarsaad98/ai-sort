@@ -31,6 +31,8 @@ interface CliOptions {
   concurrency: number;
   refine?: number;
   refineWindow?: number;
+  priorWeight?: number;
+  btIterations?: number;
   trim: boolean;
   scores?: boolean;
   json?: boolean;
@@ -52,6 +54,14 @@ function parseNonNegativeInt(value: string): number {
   const n = Number.parseInt(value, 10);
   if (!Number.isFinite(n) || n < 0) {
     throw new InvalidArgumentError("must be a non-negative integer");
+  }
+  return n;
+}
+
+function parseNonNegativeFloat(value: string): number {
+  const n = Number.parseFloat(value);
+  if (!Number.isFinite(n) || n < 0) {
+    throw new InvalidArgumentError("must be a non-negative number");
   }
   return n;
 }
@@ -180,6 +190,16 @@ async function main(): Promise<void> {
       "cap how many ranks apart refined pairs may be (default: unbounded)",
       parsePositiveInt,
     )
+    .option(
+      "--prior-weight <w>",
+      "Bradley-Terry prior strength; higher shrinks score gaps (default: 0.5)",
+      parseNonNegativeFloat,
+    )
+    .option(
+      "--bt-iterations <n>",
+      "Bradley-Terry fit iterations; more converges tighter, no extra LLM calls (default: 200)",
+      parsePositiveInt,
+    )
     .option("--no-trim", "keep leading/trailing whitespace on each item")
     .option("--scores", "print Bradley-Terry scores alongside stdout output")
     .option("--json", "print the ranking as JSON to stdout")
@@ -213,6 +233,8 @@ async function main(): Promise<void> {
     concurrency: options.concurrency,
     refinementBudget: options.refine,
     refinementWindow: options.refineWindow,
+    priorWeight: options.priorWeight,
+    btIterations: options.btIterations,
     onProgress: options.quiet
       ? undefined
       : ({ comparisons, phase }) => {
