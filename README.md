@@ -79,7 +79,7 @@ ai-sort --input items.txt --prompt "..." --model qwen3.5:9b
 ai-sort --input items.txt --prompt "..." --base-url http://otherhost:11434
 
 # OpenAI — reads $OPENAI_API_KEY (or a .env file in the working directory)
-ai-sort --input items.txt --prompt "..." --provider openai --model gpt-4o-mini
+ai-sort --input items.txt --prompt "..." --provider openai --model gpt-5.4-mini
 ```
 
 For OpenAI, the key is read from the `OPENAI_API_KEY` environment variable. A
@@ -109,7 +109,7 @@ Run `ai-sort --help` for the full list.
 import { sortByPrompt, sortByPromptInPlace, rankItemsByPrompt, createComparator } from "ai-sort";
 
 const comparator = createComparator({ provider: "ollama", model: "qwen3.5:9b" });
-// or: createComparator({ provider: "openai", model: "gpt-4o-mini" })  // uses $OPENAI_API_KEY
+// or: createComparator({ provider: "openai", model: "gpt-5.4-mini" })  // uses $OPENAI_API_KEY
 
 // Returns a new sorted array; the input is untouched.
 const sorted = await sortByPrompt(items, {

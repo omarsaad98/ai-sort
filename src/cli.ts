@@ -37,7 +37,7 @@ interface CliOptions {
   quiet?: boolean;
 }
 
-const DEFAULT_OPENAI_MODEL = "gpt-4o-mini";
+const DEFAULT_OPENAI_MODEL = "gpt-5.4-mini";
 
 function parsePositiveInt(value: string): number {
   const n = Number.parseInt(value, 10);
