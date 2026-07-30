@@ -138,32 +138,57 @@ async function mergeSort(engine: Engine, ids: number[]): Promise<number[]> {
 
 /**
  * Spends up to `budget` extra comparisons on the pairs most likely to change
- * the final order: neighbours in the current score ranking that the initial
- * merge-sort pass never happened to compare directly. Refits scores after each
- * batch, so later batches target the updated ranking, and stops early once
- * every adjacent pair has been settled.
+ * the final order, working outward from the closest neighbours in the current
+ * score ranking. Refits scores after each batch so later batches target the
+ * updated ranking.
+ *
+ * The targeting window starts at distance 1 (immediate neighbours) and widens
+ * one rank at a time, but only once every uncompared pair inside it is settled
+ * — so the budget always lands on the nearest, most order-relevant pairs first.
+ * This is what lets an arbitrarily large budget be spent: a fixed w=1 pass caps
+ * out at ~n comparisons, whereas widening exposes the O(n^2) pairs further
+ * apart. `maxWindow` bounds how far the window may grow (at n-1 every pair has
+ * been compared).
  */
-async function refine(engine: Engine, n: number, budget: number, batchSize: number): Promise<void> {
+async function refine(
+  engine: Engine,
+  n: number,
+  budget: number,
+  batchSize: number,
+  maxWindow: number,
+): Promise<void> {
   let spent = 0;
+  let window = 1;
   while (spent < budget) {
     const scores = fitBradleyTerry(engine.pairWins, n);
     const order = Array.from({ length: n }, (_, id) => id).sort((a, b) => scores[b] - scores[a]);
 
-    // Collect a batch of adjacent pairs that have never been directly compared,
-    // so the LLM calls can overlap instead of running one at a time. Pairs
-    // already in the cache are settled: re-querying them cannot change the
-    // cached verdict, so there is nothing more to learn from them.
+    // Collect a batch of uncompared pairs within the current window, nearest
+    // neighbours first: distance 1, then 2, and so on up to `window`. A refit
+    // may have reordered items, so re-scanning from distance 1 each round
+    // catches pairs that only just became adjacent. Cached pairs are settled —
+    // re-querying cannot change a memoized verdict — so they are skipped.
+    // Batching lets the LLM calls overlap instead of running one at a time.
     const batch: Array<[number, number]> = [];
     const room = Math.min(batchSize, budget - spent);
-    for (let k = 0; k < order.length - 1 && batch.length < room; k++) {
-      const a = order[k];
-      const b = order[k + 1];
-      if (!engine.cache.has(cacheKey(Math.min(a, b), Math.max(a, b)))) {
-        batch.push([a, b]);
+    for (let d = 1; d <= window && batch.length < room; d++) {
+      for (let k = 0; k + d < order.length && batch.length < room; k++) {
+        const a = order[k];
+        const b = order[k + d];
+        if (!engine.cache.has(cacheKey(Math.min(a, b), Math.max(a, b)))) {
+          batch.push([a, b]);
+        }
       }
     }
 
-    if (batch.length === 0) break; // stable: every adjacent pair is settled
+    if (batch.length === 0) {
+      // Every pair within the current window is settled. Widen it if allowed
+      // and farther pairs remain; otherwise nothing is left to learn.
+      if (window >= maxWindow || window >= n - 1) break;
+      window++;
+      continue;
+    }
+
     await Promise.all(batch.map(([a, b]) => compareIds(engine, a, b, "refine")));
     spent += batch.length;
   }
@@ -229,7 +254,10 @@ export async function rankByPrompt(items: readonly string[], options: SortOption
 
     const budget = options.refinementBudget ?? groupCount;
     if (budget > 0) {
-      await refine(engine, groupCount, budget, Math.max(1, options.concurrency ?? 4));
+      // Unbounded window by default: widen until the budget is spent or every
+      // pair (distance up to n-1) has been compared.
+      const maxWindow = Math.max(1, options.refinementWindow ?? groupCount - 1);
+      await refine(engine, groupCount, budget, Math.max(1, options.concurrency ?? 4), maxWindow);
     }
     groupScores = toLogScale(fitBradleyTerry(engine.pairWins, groupCount));
   }

@@ -30,6 +30,7 @@ interface CliOptions {
   think?: boolean;
   concurrency: number;
   refine?: number;
+  refineWindow?: number;
   trim: boolean;
   scores?: boolean;
   json?: boolean;
@@ -174,6 +175,11 @@ async function main(): Promise<void> {
       "extra comparisons spent resolving uncertain adjacent pairs (default: item count, 0 to disable)",
       parseNonNegativeInt,
     )
+    .option(
+      "--refine-window <n>",
+      "cap how many ranks apart refined pairs may be (default: unbounded)",
+      parsePositiveInt,
+    )
     .option("--no-trim", "keep leading/trailing whitespace on each item")
     .option("--scores", "print Bradley-Terry scores alongside stdout output")
     .option("--json", "print the ranking as JSON to stdout")
@@ -206,6 +212,7 @@ async function main(): Promise<void> {
     comparator,
     concurrency: options.concurrency,
     refinementBudget: options.refine,
+    refinementWindow: options.refineWindow,
     onProgress: options.quiet
       ? undefined
       : ({ comparisons, phase }) => {

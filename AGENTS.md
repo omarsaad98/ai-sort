@@ -20,8 +20,11 @@ report `a > b`, `b > c`, and `c > a`:
 
 1. **Bootstrap** — merge sort drives a first pass (~`n log n` comparisons) to get a
    provisional order. Treated as evidence, not truth.
-2. **Refine** — remaining `refinementBudget` goes to adjacent pairs never directly
-   compared. Stops early once every adjacent pair is settled.
+2. **Refine** — remaining `refinementBudget` goes to the pairs most likely to
+   change the order, working outward from score-adjacent neighbours. The
+   targeting window widens (capped by `refinementWindow`) and scores refit
+   between batches, so any budget is spendable; stops once the budget is spent
+   or every pair is settled.
 3. **Fit** — all recorded outcomes feed a regularized Bradley-Terry model
    ([bradleyTerry.ts](src/bradleyTerry.ts), Zermelo/MM iterations). Cycles are
    tolerated by construction. Final order sorts by latent score.

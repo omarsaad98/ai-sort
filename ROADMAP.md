@@ -8,8 +8,8 @@ The goal is a **dial-heavy** tool: sorting with a noisy judge is a cost/accuracy
 |---|---|---|
 | `objective` | always a full total order | `rank` \| `topk` \| `tiers` — a full sort is the *wrong algorithm* for selection (see below) |
 | `concurrency` | exposed, default 4 | keep; add adaptive backoff on provider 429/503 |
-| `refinementBudget` | exposed, **but caps out at ~n** | expanding window (see below) so any budget is spendable |
-| `refinementWindow` | — | targeting breadth `w`; grow until budget is spent |
+| `refinementBudget` | exposed; **expanding window spends any budget** | ✅ done — window widens outward until budget is spent |
+| `refinementWindow` | exposed, default unbounded | ✅ done — caps targeting breadth `w` |
 | `priorWeight` | hardcoded `0.5` (`bradleyTerry.ts`) | expose; controls score shrinkage and scale |
 | `btIterations` | hardcoded `200` | expose, or converge on delta tolerance instead |
 | `confidenceSource` | none | `none` \| `logprob` \| `verbal` |
@@ -108,7 +108,7 @@ Tested on Ollama 0.32.5 / qwen3.5:9b, 3 pairs of known difficulty, both presenta
 
 ## Bigger items
 
-- **Expanding-window refine** — the highest-value change. `refine` currently stops once every score-adjacent pair is compared (w=1), so a large `refinementBudget` goes unspent; the snacks run had budget 8 and used 2. Grow `w` and refit between rounds until the budget is exhausted, turning `refinementBudget` into a real dial across the whole table above.
+- ~~**Expanding-window refine**~~ — ✅ **done.** `refine` used to stop once every score-adjacent pair was compared (w=1), so a large `refinementBudget` went unspent; the snacks run had budget 8 and used 2. Now the targeting window starts at distance 1 and widens one rank at a time — refitting between batches, always spending on the nearest uncompared pairs first — until the budget is exhausted or every pair (distance up to n-1) is settled. `refinementWindow` caps the breadth. This makes `refinementBudget` a real dial across the whole table above.
 - **Persistent comparison graph** — cache the win graph to disk keyed by (item text, prompt, model). Makes re-runs nearly free and enables incremental work.
 - **Incremental insert** — add items to an existing ranking without re-sorting; binary-search the ranking, then refine locally.
 - **Tiers as a first-class output** — group statistically indistinguishable items instead of asserting rank 17 vs 18. Needs score uncertainty (bootstrap over the edge set, or Hessian-based intervals).

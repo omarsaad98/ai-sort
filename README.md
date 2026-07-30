@@ -96,6 +96,7 @@ Reasoning is disabled by default on thinking-capable Ollama models, since it rou
 |---|---|
 | `-c, --concurrency <n>` | Max concurrent LLM calls (default 4) |
 | `-r, --refine <n>` | Extra comparisons after the first pass (default: item count; `0` disables) |
+| `--refine-window <n>` | Cap how many ranks apart refined pairs may be (default: unbounded) |
 | `--scores` | Prefix each line with its latent score |
 | `--json` | Emit ranks, scores, and source paths as JSON |
 | `--no-trim` | Keep surrounding whitespace on each item |
@@ -159,7 +160,7 @@ The test suite covers the cycle handling explicitly, including a rock-paper-scis
 
 ## Roadmap
 
-See [ROADMAP.md](ROADMAP.md) for planned dials and the measurements behind them — comparison-density vs accuracy curves, confidence-signal comparisons, and the known limits of the current `refinementBudget`.
+See [ROADMAP.md](ROADMAP.md) for planned dials and the measurements behind them — comparison-density vs accuracy curves, confidence-signal comparisons, and the tradeoffs behind the `refinementBudget`/`refinementWindow` refinement dials.
 
 ## License
 

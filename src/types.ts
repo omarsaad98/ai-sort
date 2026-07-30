@@ -23,12 +23,23 @@ export interface SortOptions {
   /** Max concurrent in-flight comparisons. Default 4. */
   concurrency?: number;
   /**
-   * Extra comparison budget spent refining uncertain/adjacent pairs after the
-   * initial O(n log n) merge-sort pass, using Bradley-Terry scores to find
-   * the pairs most likely to change the final order. Default: n (one extra
-   * round's worth), 0 disables refinement entirely.
+   * Extra comparison budget spent refining uncertain pairs after the initial
+   * O(n log n) merge-sort pass, using Bradley-Terry scores to find the pairs
+   * most likely to change the final order. Refinement works outward from the
+   * closest neighbours in the current ranking; the targeting window widens once
+   * near pairs are exhausted, so any budget up to the full O(n^2) distinct pairs
+   * can be spent. Default: n (one extra round's worth), 0 disables refinement
+   * entirely. See `refinementWindow` to cap the breadth.
    */
   refinementBudget?: number;
+  /**
+   * Maximum targeting breadth for refinement: how many ranks apart two items may
+   * be and still get compared. Refinement always spends on the closest pairs
+   * first; this caps how far the window will widen. Default: unbounded (widens
+   * until the budget is spent or every pair has been compared). Set it to keep
+   * the extra comparisons focused on near-ties rather than distant pairs.
+   */
+  refinementWindow?: number;
   /** Called after each comparison completes, useful for progress bars. */
   onProgress?: (progress: SortProgress) => void;
 }
