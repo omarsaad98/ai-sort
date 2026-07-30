@@ -1,0 +1,605 @@
+\documentclass[11pt,a4paper]{article}
+
+\usepackage[margin=1in]{geometry}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{amsthm}
+\usepackage{booktabs}
+\usepackage{xcolor}
+\usepackage{hyperref}
+
+\hypersetup{colorlinks=true, linkcolor=blue!50!black, urlcolor=blue!50!black,
+            citecolor=blue!50!black}
+
+\newtheorem{proposition}{Proposition}
+\newtheorem{definition}{Definition}
+
+\DeclareMathOperator*{\argmax}{arg\,max}
+\newcommand{\Ind}{\mathbb{I}}
+\newcommand{\Prob}{\mathbb{P}}
+\newcommand{\Exp}{\mathbb{E}}
+
+\title{\textbf{Rank Inference from a Non-Transitive Pairwise Oracle}\\
+\large Query Complexity, Parallel Span, and an Empirical Accuracy Ceiling}
+\author{Working draft}
+\date{30 July 2026}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+We study the problem of ordering a finite set of texts by fitness to a
+natural-language criterion, where the only available signal is a pairwise oracle
+realized by a large language model. Such an oracle is noisy and, critically, need
+not be transitive: the induced tournament may contain directed cycles, so no
+total order is consistent with all observed comparisons and comparison-sorting is
+ill-posed. We adopt a two-stage formulation that separates \emph{query
+scheduling} from \emph{rank inference}: an adaptive schedule selects which pairs
+to query under a budget, and a regularized Bradley--Terry estimator fits latent
+scores to all observed outcomes, absorbing cycles by construction. Within this
+formulation we establish four results. First, ranking error decreases by
+approximately $65\%$ as the query budget grows from $\Theta(n\log n)$ to
+$\binom{n}{2}$, with sharply diminishing returns, and adaptively targeted queries
+improve on uniformly random ones by only ${\sim}8\%$ at equal budget --- density
+dominates targeting. Second, the objective determines the algorithm: when the
+goal is to \emph{select} a good $k$-subset rather than to order it, a screening
+schedule attains half the selection regret of a full sort at $56\%$ of its query
+cost. Third, we give a span analysis showing that a merge-sort schedule has
+$\Theta(n)$ sequentially dependent queries whereas round-based schedules have
+span $O(r)$ in the number of rounds, so the selection-oriented schedule is
+simultaneously cheaper and asymptotically more parallel. Fourth, on $500$
+sentences of the Stanford Sentiment Treebank we obtain Kendall $\tau_b = 0.613$
+using $3.4\%$ of all pairs, and find that oracle accuracy increases
+monotonically with ground-truth separation, from $53.7\%$ on near-ties to
+$98.4\%$ on well-separated pairs. This establishes an accuracy ceiling
+attributable to the oracle rather than to the inference procedure. The ceiling is
+severe under exact rank recovery yet largely benign under a subset-quality
+criterion: at $k=10$ a precision of $0.2$ coincides with a selection regret of
+$0.235$, the returned subset capturing ${\sim}77\%$ of the available quality
+margin.
+\end{abstract}
+
+\section{Introduction}
+
+Let $X = \{x_1,\dots,x_n\}$ be a set of texts and let $p$ be a criterion
+expressed in natural language. We wish to order $X$ by fitness to $p$, given
+access only to an oracle that compares two elements at a time.
+
+Realizing this oracle with a language model introduces two departures from the
+classical comparison model. The oracle is \emph{stochastic}: repeated queries, or
+queries with the two candidates exchanged, may disagree. More consequentially it
+is \emph{intransitive}: the relation it induces may contain cycles
+$x_a \succ x_b \succ x_c \succ x_a$. Comparison sorting presumes a total order;
+applied to an intransitive relation its output is a function of the comparison
+schedule and of implementation details rather than of the data. A third
+constraint is economic: each query is a model inference, so the query count is
+the dominant cost and $\binom{n}{2}$ queries are infeasible for even moderate
+$n$.
+
+We therefore treat comparisons as \emph{evidence} to be aggregated rather than
+as an ordering to be realized. Section~\ref{sec:formulation} formalizes the query
+model and the two objectives we consider; Section~\ref{sec:method} specifies the
+estimator and the schedules and analyzes their query complexity and parallel
+span; Section~\ref{sec:experiments} reports simulation and empirical results.
+
+\section{Problem formulation}
+\label{sec:formulation}
+
+\subsection{Query model}
+
+\begin{definition}[Comparison oracle]
+An oracle $\mathcal{O}$ accepts an unordered pair $\{i,j\}$ and returns a verdict
+in $\{i, j, \varnothing\}$, where $\varnothing$ denotes a declared tie. A
+\emph{schedule} is an adaptive procedure that issues a sequence of queries, each
+possibly depending on previous verdicts, and terminates after at most $B$
+distinct queries.
+\end{definition}
+
+We impose the invariant that each unordered pair is queried at most once, its
+verdict being reused thereafter. This is a modeling choice with a substantive
+consequence: it renders the oracle \emph{deterministic} on its domain, so
+stochasticity manifests only as a fixed but possibly erroneous verdict per pair.
+An erroneous verdict cannot be corrected by resampling; it can only be
+outweighed by other edges incident to the same vertices. We revisit this in
+Section~\ref{sec:density}.
+
+Verdicts induce a weighted digraph on $X$ with $w_{ij}$ counting verdicts in
+favour of $i$ over $j$; a tie contributes $\tfrac12$ to each direction. This
+digraph need not be acyclic.
+
+To neutralize the oracle's known sensitivity to presentation
+order~\cite{zheng2023}, each query is issued with the candidate order drawn
+uniformly at random and the verdict re-oriented afterwards, so that no positional
+preference is systematically attributed to either operand.
+
+\subsection{Objectives}
+
+Two objectives are of interest, and they are not interchangeable.
+
+\paragraph{Full ranking.} Recover a permutation agreeing with a latent order. We
+measure agreement by Kendall's $\tau_b$, which corrects for ties in the reference
+ordering~\cite{kendall1945}:
+\begin{equation}
+\tau_b = \frac{C - D}{\sqrt{(C+D+T_x)(C+D+T_y)}},
+\end{equation}
+with $C$, $D$ the numbers of concordant and discordant pairs and $T_x$, $T_y$
+the numbers of pairs tied in only one of the two orderings. In simulation we
+also report the normalized Kendall distance, the fraction of pairs misordered.
+
+\paragraph{Top-$k$ selection.} Return a subset $S \subseteq X$, $|S| = k$, of
+high-quality elements, with no requirement that $S$ be internally ordered. Let
+$q: X \to \mathbb{R}$ denote latent quality and $\bar q(A)$ the mean of $q$ over
+$A$. We report both
+\begin{equation}
+\text{precision}(S) = \frac{|S \cap X_k^{*}|}{k},
+\qquad
+\mathrm{regret}(S) = \frac{\bar q(X_k^{*}) - \bar q(S)}
+                          {\bar q(X_k^{*}) - \bar q(X)},
+\label{eq:regret}
+\end{equation}
+where $X_k^{*}$ is an optimal $k$-subset. Regret vanishes for an optimal
+selection and equals $1$ in expectation for a uniformly random one. The two
+measures differ precisely on near-ties: exchanging an element of $X_k^{*}$ for
+one of nearly equal quality reduces precision by $1/k$ while leaving regret
+almost unchanged. Since near-ties are where the oracle is least reliable
+(Section~\ref{sec:sst}), the choice of measure determines whether oracle error
+is consequential.
+
+\section{Method}
+\label{sec:method}
+
+\subsection{Rank inference}
+
+We aggregate verdicts with the Bradley--Terry model~\cite{bradley1952}, under
+which each item carries a strength $\gamma_i > 0$ and
+$\Prob(i \succ j) = \gamma_i / (\gamma_i + \gamma_j)$. The model is fitted by the
+Zermelo/MM iteration~\cite{zermelo1929,hunter2004}, which we regularize:
+\begin{equation}
+\gamma_i^{(t+1)} \;=\;
+\frac{\alpha + \sum_{j \neq i} w_{ij}}
+     {\dfrac{2\alpha}{\gamma_i^{(t)} + 1} \;+\;
+      \sum_{j \neq i} \dfrac{w_{ij} + w_{ji}}{\gamma_i^{(t)} + \gamma_j^{(t)}}},
+\label{eq:mm}
+\end{equation}
+followed by renormalization of $\{\gamma_i\}$ to unit geometric mean. The terms
+in $\alpha$ constitute a Jeffreys-type prior contributing $\alpha$ fictitious
+wins and $\alpha$ fictitious losses against a virtual opponent of unit strength;
+we take $\alpha = \tfrac12$.
+
+Regularization is not cosmetic. When the comparison digraph is linearly
+separable --- which occurs whenever the observed verdicts admit a consistent
+total order --- the unregularized likelihood has no interior maximum and the
+extreme strengths diverge. On an $8$-element instance we observed fitted
+strengths spanning $2.5\times10^{-3}$ to $1.46\times10^{4}$, rendering
+magnitudes uninterpretable while leaving the induced order unchanged. The prior
+yields a proper posterior mode and bounded strengths. We report the additive
+parameterization
+\begin{equation}
+s_i = \log \gamma_i, \qquad \Prob(i \succ j) = \sigma(s_i - s_j),
+\end{equation}
+so that scores are centred near zero and differences read as log-odds.
+
+Two properties of this estimator are relevant to intransitivity. Cycles are
+absorbed rather than broken: the fit maximizes the likelihood of the entire
+verdict set rather than requiring each edge to be satisfied, and on a symmetric
+$3$-cycle it returns $s_a = s_b = s_c = 0$, reporting a tie. Second, strengths
+are opponent-weighted, correcting a deficiency of raw win counts: on a
+constructed $7$-element instance, an item with two victories over strong
+opponents received $s = 2.11$ while an item with two victories over weak
+opponents received $s = 0.73$, and the former was ranked above an item with
+three victories.
+
+Elements with identical text are merged before inference, since such a pair is
+tied by definition and yields no information; they receive equal scores and
+adjacent positions.
+
+\subsection{Schedules}
+
+We consider three families of schedule.
+
+\begin{itemize}
+  \item \textbf{Merge sort.} A merge sort issues $\Theta(n \log n)$ queries. Its
+    output permutation is discarded; only the verdicts are retained. It serves
+    purely as a query schedule.
+  \item \textbf{Round-based (Swiss).} In each of $r$ rounds, items are
+    partitioned into disjoint pairs and all pairs are queried. The first round
+    pairs at random; subsequent rounds pair items adjacent in the current fitted
+    order, concentrating queries where the ordering is contested. Cost
+    ${\approx} rn/2$.
+  \item \textbf{Screening for selection.} $r$ Swiss rounds, followed by
+    exhaustive querying among the top $ck$ candidates of the fitted order, which
+    settles the boundary of the retained set. Cost
+    ${\approx} rn/2 + \binom{ck}{2}$.
+  \end{itemize}
+
+A refinement phase may additionally query pairs adjacent in the fitted order
+that remain unqueried, refitting between batches.
+
+\subsection{Query complexity and parallel span}
+\label{sec:span}
+
+Because queries are the dominant cost and may be issued concurrently, two
+quantities matter: the total number of queries, and the \emph{span}, i.e.\ the
+length of the longest chain of queries in which each depends on the outcome of
+its predecessor. Span lower-bounds latency irrespective of available parallelism.
+
+\begin{proposition}[Span of a merge-sort schedule]
+\label{prop:span}
+Merging two sorted sequences of lengths $\lceil n/2\rceil$ and
+$\lfloor n/2\rfloor$ requires, in the worst case, $n-1$ queries each of which
+depends on the outcome of its predecessor. Consequently the span $S(n)$ of the
+merge-sort schedule satisfies $S(n) = S(n/2) + (n-1)$, giving
+$S(n) = \Theta(n)$.
+\end{proposition}
+
+\begin{proof}[Proof sketch]
+Within a merge, the choice of the pair compared at step $t+1$ is determined by
+which operand was emitted at step $t$; hence the queries of a single merge form a
+dependency chain of length up to $n-1$. Sibling subproblems are independent, so
+the span recursion adds only the cost of the root merge to that of one
+subproblem, and unrolling $S(n) = S(n/2) + (n-1)$ yields $\Theta(n)$.
+\end{proof}
+
+By contrast, the $\lfloor n/2 \rfloor$ queries of a Swiss round act on disjoint
+pairs and are mutually independent, so a round contributes $1$ to the span and
+the $r$-round schedule has span $r$; the screening schedule adds a single
+parallel batch, giving span $r+1$. Thus for fixed $r$ the round-based schedules
+have span $O(1)$ in $n$, against $\Theta(n)$ for merge sort --- an asymptotic
+separation in attainable latency, independent of the constant-factor cost of an
+individual query.
+
+\section{Experiments}
+\label{sec:experiments}
+
+\subsection{Simulation methodology}
+
+To evaluate against known ground truth we instantiate a synthetic oracle obeying
+the model of Section~\ref{sec:method}. Item $i$ is assigned latent strength
+$\theta_i$ on an evenly spaced grid spanning $\Delta$ logits, and the oracle
+returns $i$ over $j$ with probability $\sigma(\theta_i - \theta_j)$, sampled once
+per pair and thereafter fixed, in accordance with the query model. With
+$n$ items spanning $\Delta$ logits, adjacent items differ by
+$\Delta/(n-1)$ logits and the oracle is correspondingly close to
+uninformative on them; we choose $\Delta = 4$, giving adjacent-pair accuracy of
+$51.7\%$ at $n = 60$ and $50.5\%$ at $n = 200$. This deliberately reproduces the
+regime observed empirically in Section~\ref{sec:sst}. All simulation figures
+average over independent trials with distinct seeds.
+
+\subsection{Query density versus accuracy}
+\label{sec:density}
+
+We fix $n = 60$ and $24$ trials and vary the query budget. The window-$w$
+schedule augments a merge-sort base with queries between items within $w$
+positions of one another in the current fitted order, refitting between rounds.
+The final column applies the same number of additional queries to uniformly
+random pairs, isolating the value of targeting from that of density.
+
+\begin{table}[h]
+\centering
+\begin{tabular}{lrrrr}
+\toprule
+Schedule & Queries & Kendall dist. & Top-10 & Random @ equal budget \\
+\midrule
+Merge sort only      &  227 & 0.2293 & 5.5/10 & --- \\
+Window $w=1$         &  328 & 0.1680 & 6.0/10 & 0.1813 \\
+Window $w=2$         &  412 & 0.1464 & 6.8/10 & 0.1597 \\
+Window $w=4$         &  558 & 0.1224 & 7.0/10 & 0.1361 \\
+Window $w=8$         &  784 & 0.1044 & 7.4/10 & 0.1167 \\
+Exhaustive           & ${\sim}1997$ & 0.0792 & 8.3/10 & 0.0743 \\
+\bottomrule
+\end{tabular}
+\caption{Normalized Kendall distance (lower is better) versus query budget;
+$n=60$, $24$ trials.}
+\label{tab:density}
+\end{table}
+
+Error decreases monotonically in the budget, by ${\sim}65\%$ from
+$\Theta(n\log n)$ to exhaustive, but with pronounced concavity: the first
+${\sim}100$ additional queries ($+44\%$ cost) remove $27\%$ of the error, whereas
+attaining the exhaustive figure costs a further $6\times$ for an additional
+$53\%$. Targeting yields a consistent but modest advantage over random selection
+at matched budget, ${\sim}8\%$ in relative error across all budget levels; the
+dominant factor is density rather than the choice of which pairs to query.
+
+This is consistent with the deterministic-oracle property noted in
+Section~\ref{sec:formulation}: additional edges cannot resample an erroneous
+verdict, and act instead by increasing the number of constraints incident to each
+vertex, so that a single incorrect edge is outweighed. A residual Kendall
+distance of $0.079$ persists under exhaustive querying, an error floor
+determined by oracle quality alone.
+
+\subsection{Objective choice: ranking versus selection}
+\label{sec:topk}
+
+We now fix the selection objective of Eq.~\eqref{eq:regret} with $n = 200$,
+$k = 10$ and $20$ trials, and compare schedules.
+
+\begin{table}[h]
+\centering
+\begin{tabular}{lrrr}
+\toprule
+Schedule & Queries & Precision & Normalized regret \\
+\midrule
+Merge sort (full order)     & 1042 & $24.0\%$ & 0.3740 \\
+Swiss $r=2$                 &  200 & $6.5\%$  & 0.7298 \\
+Swiss $r=4$                 &  400 & $15.5\%$ & 0.3622 \\
+Swiss $r=6$                 &  598 & $23.5\%$ & 0.2556 \\
+Screening $r=4$, $c=2$      &  582 & $26.0\%$ & \textbf{0.1866} \\
+Screening $r=4$, $c=4$      & 1152 & $42.0\%$ & \textbf{0.1012} \\
+\bottomrule
+\end{tabular}
+\caption{Top-$k$ selection quality; $n=200$, $k=10$, $20$ trials.}
+\label{tab:topk}
+\end{table}
+
+Two conclusions follow. First, the two measures of Eq.~\eqref{eq:regret} rank the
+same output very differently. The merge-sort schedule attains precision $0.24$,
+yet its regret of $0.374$ indicates that the returned subset captures
+${\sim}63\%$ of the quality margin available over a random selection. Precision
+is the more pessimistic measure by construction whenever the upper region of the
+list is tightly clustered, since it charges full cost for exchanging elements of
+nearly equal quality.
+
+Second, a full sort is dominated for this objective. Screening with $c = 2$
+attains half the regret of the merge-sort schedule using $56\%$ of the queries,
+and exceeds it on precision as well; Swiss with $r = 4$ matches its regret at
+$38\%$ of the query cost. The full sort expends budget on two tasks the objective
+does not reward: ordering elements that will be excluded from $S$, and ordering
+elements within $S$. Combined with Proposition~\ref{prop:span}, the screening
+schedule is thus preferable in queries and in span simultaneously.
+
+\subsection{Confidence signals}
+\label{sec:conf}
+
+The $8\%$ margin available to targeting (Section~\ref{sec:density}) motivates a
+per-query uncertainty estimate with which to prioritize pairs. We compare two
+estimators obtainable from the same oracle: a verbalized confidence, elicited by
+requesting a probability alongside the verdict, and the normalized
+log-probability assigned to the verdict token. Three pairs of differing
+difficulty were each queried in both presentation orders; a well-behaved
+estimator should invert its verdict label when the operands are exchanged.
+
+\begin{table}[h]
+\centering
+\begin{tabular}{lll}
+\toprule
+Pair difficulty & Verbalized & Token log-probability \\
+\midrule
+Well separated & $1.00 / 1.00$, order-stable  & $0.999 / 0.998$, order-stable \\
+Ambiguous      & $0.60 / 0.50$, order-flipped & $0.608 / 0.642$, order-stable \\
+Near-tie       & $0.60 / 0.60$, order-stable  & $0.525 / 0.825$, order-flipped \\
+\bottomrule
+\end{tabular}
+\caption{Uncertainty estimators on pairs of graded difficulty.}
+\label{tab:conf}
+\end{table}
+
+Both estimators separate well-separated pairs (${\approx}1.0$) from difficult
+ones ($0.5$--$0.65$), which suffices for prioritization. The verbalized estimator
+is however severely quantized, taking only three distinct values over six
+queries and concentrating on round numbers, consistent with reported
+miscalibration of elicited confidence~\cite{tian2023}; the log-probability
+estimator is continuous and requires no additional generated tokens. Neither is
+order-invariant, each inverting on one difficult pair, which supports the
+symmetrization of Section~\ref{sec:formulation} and suggests that agreement
+across both presentation orders is the more reliable estimator, at twice the
+query cost.
+
+\subsection{Empirical evaluation on the Stanford Sentiment Treebank}
+\label{sec:sst}
+
+We evaluate against SST~\cite{socher2013}, selected because its labels are
+continuous on $[0,1]$ rather than categorical; datasets with few graded
+relevance levels induce large numbers of reference ties and render $\tau_b$
+uninformative. Joining sentences to phrase-level labels yields $11{,}286$
+sentences with real-valued scores spanning the full interval over $82$ distinct
+levels, with median length $16$ words; $569$ sentences were discarded for lack of
+an exact label match. Sentences are converted from Penn Treebank tokenization to
+orthographic form. The oracle is a locally served $9$B-parameter instruction-tuned
+model under greedy decoding, and the criterion is expressed as ``the most
+positive and enthusiastic sentiment about the film''.
+
+\begin{table}[h]
+\centering
+\begin{tabular}{lrrrr}
+\toprule
+$n$ & Queries & Fraction of $\binom{n}{2}$ & $\tau_b$ & Spearman $\rho$ \\
+\midrule
+$40$ (distinct labels) &  200 & $25.6\%$ & 0.700 & 0.890 \\
+$500$                  & 4227 & $3.4\%$  & 0.613 & 0.810 \\
+\bottomrule
+\end{tabular}
+\caption{Rank recovery on SST.}
+\label{tab:sst}
+\end{table}
+
+\begin{table}[h]
+\centering
+\begin{tabular}{lrr}
+\toprule
+Ground-truth separation & Accuracy ($n=40$) & Accuracy ($n=500$) \\
+\midrule
+$0.00$--$0.05$ & $59.2\%$  & $53.7\%$ \; ($6474/12048$) \\
+$0.05$--$0.15$ & $60.6\%$  & $64.5\%$ \; ($16471/25536$) \\
+$0.15$--$0.30$ & $86.2\%$  & $79.5\%$ \; ($23708/29831$) \\
+$0.30$--$0.60$ & $100.0\%$ & $94.3\%$ \; ($40933/43424$) \\
+$0.60$--$1.00$ & $100.0\%$ & $98.4\%$ \; ($11674/11869$) \\
+\bottomrule
+\end{tabular}
+\caption{Oracle accuracy as a function of the ground-truth label gap.}
+\label{tab:gap}
+\end{table}
+
+Table~\ref{tab:gap} is the principal empirical result. Oracle accuracy increases
+monotonically with ground-truth separation, from near chance on near-ties to
+${\sim}98\%$ on well-separated pairs, and the profile replicates across a
+$60$-fold change in the number of judged pairs. The accuracy ceiling is therefore
+a property of the oracle on close comparisons and not of the inference
+procedure; no query budget can remove it, since Section~\ref{sec:density} shows
+that even exhaustive querying leaves a floor of the same character.
+
+\paragraph{Concentration of error at the top of the order.}
+At $n = 500$ we measure precision of $1/10$, $9/25$ and $24/50$ at
+$k = 10, 25, 50$. Reference ties account for part of this --- $13$ items lie at
+or above the tenth-highest label, so $X_{10}^{*}$ is not unique --- but the
+dominant cause is visible in Table~\ref{tab:gap}: the top ${\sim}50$ items are
+separated by gaps below $0.05$, where accuracy is $53.7\%$. The procedure
+localizes the correct region, top-$50$ recall of $48\%$ exceeding chance by
+$4.8\times$ and top-$25$ recall of $36\%$ by $7\times$, while being unable to
+order within it. Consistent with Section~\ref{sec:topk}, precision is the
+harshest available reading of this outcome: it charges full cost for exchanging
+items of nearly identical label. Table~\ref{tab:sstregret} evaluates the same
+output under both measures of Eq.~\eqref{eq:regret}.
+
+\begin{table}[h]
+\centering
+\begin{tabular}{lrrrrr}
+\toprule
+$k$ & Precision & Tie-tolerant & $\bar q(S)$ & $\bar q(X_k^{*})$ & Regret \\
+\midrule
+$5$   & $1/5$    & $1/5$    & 0.8917 & 0.9861 & 0.2069 \\
+$10$  & $2/10$   & $2/10$   & 0.8694 & 0.9736 & 0.2346 \\
+$25$  & $11/25$  & $13/25$  & 0.8556 & 0.9433 & 0.2121 \\
+$50$  & $26/50$  & $26/50$  & 0.8506 & 0.9067 & 0.1488 \\
+$100$ & $62/100$ & $62/100$ & 0.8058 & 0.8612 & 0.1671 \\
+\bottomrule
+\end{tabular}
+\caption{Selection quality on the $n=500$ SST instance under both measures.
+The reference list mean is $\bar q(X) = 0.5295$.}
+\label{tab:sstregret}
+\end{table}
+
+The divergence anticipated in Section~\ref{sec:topk} is confirmed on real data
+and is large. At $k = 10$, precision of $0.2$ coincides with regret of $0.235$:
+the returned subset attains mean label $0.869$ against an optimal $0.974$ and a
+list mean of $0.530$, thus capturing ${\sim}77\%$ of the available quality margin.
+Admitting label ties changes precision by at most two items, confirming that
+non-uniqueness of $X_k^{*}$ is not the explanation; the explanation is that
+precision and regret weight near-tie exchanges incomparably. A procedure that
+appears to fail by an order of magnitude under exact rank recovery is therefore
+substantially effective under a subset-quality criterion, and reporting only the
+former would materially misstate its behaviour.
+
+\paragraph{Replication.}
+The $n=500$ instance was evaluated twice under identical configuration, differing
+only in the randomized presentation order of each query. The two runs used
+$4227$ and $4241$ queries --- the schedule is data-dependent, since verdicts
+determine subsequent merge paths --- and yielded $\tau_b$ of $0.6127$ and
+$0.6096$, with the accuracy profile of Table~\ref{tab:gap} agreeing to within
+$1.0$ percentage point in every stratum. Variability induced by presentation
+symmetrization is thus small relative to the effects reported here.
+
+\section{Discussion}
+
+The results delineate which parts of the problem admit improvement by
+computation and which do not. Query density improves rank recovery with strongly
+diminishing returns and cannot pass an oracle-determined floor
+(Section~\ref{sec:density}); adaptive targeting recovers only a small fraction
+of the remaining margin. Conversely, the choice of objective has first-order
+consequences: the same oracle and estimator yield either a poor or a good result
+on the identical output depending on whether exact rank recovery or subset
+quality is demanded, and the schedule that is efficient for one is wasteful for
+the other. Where near-ties are intrinsic to the data, reporting a strict total
+order asserts distinctions the evidence does not support; a partition into
+equivalence classes is the more faithful summary, and identifying such classes
+requires uncertainty quantification on $s$ rather than merely its point estimate.
+
+\section{Limitations}
+\label{sec:limitations}
+
+\begin{itemize}
+  \item \textbf{Criterion--label mismatch.} The natural-language criterion is a
+    proxy for the SST annotation protocol; discordance attributable to this
+    mismatch is not separated from oracle error, so the accuracy ceiling of
+    Table~\ref{tab:gap} is an upper bound on the true error rate of the oracle
+    with respect to its own criterion.
+  \item \textbf{Single oracle instance.} All empirical results use one model on
+    one sampled instance per size. The $n=500$ instance was replicated once,
+    bounding the variability due to presentation symmetrization, but variability
+    across item samples, criteria and oracles is not characterized, and no
+    confidence intervals are reported.
+  \item \textbf{The uncertainty study is exploratory.} Table~\ref{tab:conf}
+    rests on three pairs and six queries per estimator. It supports a claim of
+    difficulty discrimination, not of calibration; in particular the reading of
+    score differences as log-odds is model-implied and not validated against
+    observed frequencies.
+  \item \textbf{Regret depends on an assumed utility.} Eq.~\eqref{eq:regret}
+    equates utility with the mean ground-truth label of the selected subset,
+    which is linear and indifferent to the dispersion within $S$. An application
+    whose utility is concave, or which requires a guaranteed minimum quality per
+    element, would rank the schedules of Table~\ref{tab:topk} differently.
+  \item \textbf{Simulation is well-specified.} The synthetic oracle obeys the
+    same parametric family used for inference, so the simulation does not probe
+    misspecification. Furthermore the exhaustive row of Table~\ref{tab:density}
+    duplicates merge-sort edges, over-weighting them.
+  \item \textbf{Interpretation of magnitudes.} The fitted $s_i$ derive from
+    graph position and the prior $\alpha$; they are not estimates of a semantic
+    distance and are comparable only within a single instance.
+\end{itemize}
+
+\section{Directions}
+
+\begin{enumerate}
+  \item \textbf{Objective-directed scheduling.} Section~\ref{sec:topk} indicates
+    that the schedule should follow from the declared objective --- full order,
+    top-$k$ subset, or partition into equivalence classes --- rather than
+    defaulting to a total order.
+  \item \textbf{Span-efficient schedules.} Proposition~\ref{prop:span} shows
+    merge sort is asymptotically suboptimal in span. Round-based and
+    sorting-network schedules attain $O(r)$ and $O(\log^2 n)$ span respectively;
+    whether a round-based bootstrap matches merge sort in rank recovery at equal
+    budget is open, and is suggested by the small margin of targeting over random
+    selection in Table~\ref{tab:density}.
+  \item \textbf{Uncertainty-directed querying.} Prioritizing pairs by the
+    log-probability estimator of Section~\ref{sec:conf}, and admitting soft edge
+    weights into Eq.~\eqref{eq:mm} only once calibration is established, since
+    uncalibrated weights would allow confidently erroneous edges to dominate the
+    likelihood.
+  \item \textbf{Equivalence-class recovery.} Estimating uncertainty on $s$, by
+    resampling the edge set or from the observed information, so that
+    statistically indistinguishable items can be reported as tied.
+  \item \textbf{Budget allocation near a boundary.} For a top-$k$ objective,
+    concentrating queries at the rank-$k$ boundary rather than uniformly.
+  \item \textbf{Calibration measurement.} Establishing, per oracle, the map from
+    fitted score differences to realized win frequencies, which is prerequisite
+    to the preceding items.
+\end{enumerate}
+
+\begin{thebibliography}{99}
+\bibitem{bradley1952} R.~A. Bradley and M.~E. Terry.
+  Rank analysis of incomplete block designs: I. The method of paired
+  comparisons. \emph{Biometrika}, 39(3/4):324--345, 1952.
+\bibitem{zermelo1929} E.~Zermelo.
+  Die Berechnung der Turnier-Ergebnisse als ein Maximumproblem der
+  Wahrscheinlichkeitsrechnung. \emph{Mathematische Zeitschrift},
+  29:436--460, 1929.
+\bibitem{hunter2004} D.~R. Hunter.
+  MM algorithms for generalized Bradley--Terry models.
+  \emph{Annals of Statistics}, 32(1):384--406, 2004.
+\bibitem{negahban2017} S.~Negahban, S.~Oh, and D.~Shah.
+  Rank Centrality: ranking from pairwise comparisons.
+  \emph{Operations Research}, 65(1):266--287, 2017.
+\bibitem{kemeny1959} J.~G. Kemeny.
+  Mathematics without numbers. \emph{Daedalus}, 88(4):577--591, 1959.
+\bibitem{dwork2001} C.~Dwork, R.~Kumar, M.~Naor, and D.~Sivakumar.
+  Rank aggregation methods for the web. In \emph{WWW}, 2001.
+\bibitem{kemenyElicit} Eliciting Kemeny rankings.
+  arXiv:2312.11663. \url{https://arxiv.org/html/2312.11663v1}
+\bibitem{activeRanking} Robust active ranking from sparse noisy comparisons.
+  arXiv:1502.05556. \url{https://arxiv.org/abs/1502.05556v1}
+\bibitem{zheng2023} L.~Zheng et al.
+  Judging LLM-as-a-judge with MT-Bench and Chatbot Arena.
+  In \emph{NeurIPS}, 2023.
+\bibitem{tian2023} K.~Tian et al.
+  Just ask for calibration: strategies for eliciting calibrated confidence
+  scores from language models. In \emph{EMNLP}, 2023.
+\bibitem{socher2013} R.~Socher et al.
+  Recursive deep models for semantic compositionality over a sentiment
+  treebank. In \emph{EMNLP}, 2013.
+  \url{https://nlp.stanford.edu/sentiment/}
+\bibitem{kendall1945} M.~G. Kendall.
+  The treatment of ties in ranking problems.
+  \emph{Biometrika}, 33(3):239--251, 1945.
+\end{thebibliography}
+
+\end{document}

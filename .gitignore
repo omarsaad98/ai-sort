@@ -1,0 +1,13 @@
+node_modules/
+dist/
+data/
+*.log
+.env
+.DS_Store
+
+# LaTeX build artifacts (whitepaper.tex is tracked, the PDF is not)
+paper/*.aux
+paper/*.out
+paper/*.toc
+paper/*.pdf
+paper/*.synctex.gz
